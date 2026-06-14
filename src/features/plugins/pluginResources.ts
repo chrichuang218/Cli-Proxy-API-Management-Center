@@ -1,4 +1,5 @@
 import type { PluginListEntry, PluginMenu } from '@/types';
+import { DEFAULT_API_PORT } from '@/utils/constants';
 import { normalizeApiBase } from '@/utils/connection';
 
 export const PLUGIN_RESOURCES_REFRESH_EVENT = 'plugin-resources-refresh';
@@ -24,12 +25,39 @@ export const getPluginTitle = (plugin: PluginListEntry) =>
 export const buildPluginResourceRoute = (pluginID: string, menuIndex: number) =>
   `/plugin-pages/${encodeURIComponent(pluginID)}/${menuIndex}`;
 
+const isLocalPluginResourcePath = (value: string) =>
+  value === '/v0/resource' || value.startsWith('/v0/resource/');
+
+const resolveLocalPluginResourceBase = (apiBase: string) => {
+  const base = normalizeApiBase(apiBase);
+  if (!base) return '';
+
+  try {
+    const url = new URL(base);
+    const host = url.hostname.toLowerCase();
+    const isLocalhost =
+      host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+    const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+
+    if (isLocalhost && port !== String(DEFAULT_API_PORT)) {
+      url.port = String(DEFAULT_API_PORT);
+      return url.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    return base;
+  }
+
+  return base;
+};
+
 export const resolvePluginAssetURL = (value: string, apiBase: string) => {
   const trimmed = value.trim();
   if (!trimmed) return '';
   if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed;
   if (!trimmed.startsWith('/')) return trimmed;
-  const base = normalizeApiBase(apiBase);
+  const base = isLocalPluginResourcePath(trimmed)
+    ? resolveLocalPluginResourceBase(apiBase)
+    : normalizeApiBase(apiBase);
   return base ? `${base}${trimmed}` : trimmed;
 };
 
@@ -41,9 +69,7 @@ export const buildRepositoryURL = (repository: string) => {
   return `https://github.com/${trimmed.replace(/^\/+/, '')}`;
 };
 
-export const collectPluginResourceEntries = (
-  plugins: PluginListEntry[]
-): PluginResourceEntry[] =>
+export const collectPluginResourceEntries = (plugins: PluginListEntry[]): PluginResourceEntry[] =>
   plugins.flatMap((plugin) => {
     if (!plugin.effectiveEnabled) return [];
 
